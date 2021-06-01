@@ -57,6 +57,12 @@ class UKF {
   // state covariance matrix
   Eigen::MatrixXd P_;
 
+  // Lidar measurement noise matrix
+  Eigen::MatrixXd Rlidar_;
+
+  // Radar measurement noise matrix
+  Eigen::MatrixXd Rradar_;
+
   // predicted sigma points matrix
   Eigen::MatrixXd Xsig_pred_;
 

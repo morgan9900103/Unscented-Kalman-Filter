@@ -63,6 +63,18 @@ UKF::UKF() {
 
     Xsig_pred_ = MatrixXd(n_aug_, 2*n_aug_+1);
 
+    weights = VectorXd(2*n_aug_+1);
+    weights.fill(0.5/(lambda_+n_aug_));
+    weights(0) = lambda_/(lambda_+n_aug_);
+
+    Rlidar_ = MatrixXd(2, 2);
+    Rlidar_ << std_laspx_, 0, 0, std_laspy_;
+
+    Rradar_ = MatrixXd(3, 3);
+    Rradar_.fill(0.0);
+    Rradar(0, 0) = std_radr_;
+    Rradar(1, 1) = std_radphi_;
+    Rradar(2, 2) = std_radrd_;
 }
 
 UKF::~UKF() {}
@@ -73,8 +85,30 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     * measurements.
     */
     if (!is_initialized_) {
-        
+        if (meas_package.sensor_type_ == MeasurementPackage::LASER) {
+            x_ << meas_package.raw_measurements_(0),
+                  meas_package.raw_measurements_(1),
+                  0,
+                  0,
+                  0;
+            P_ = MatrixXd::identity(5, 5);
+            P_(0, 0) = std_laspx_;
+            P_(1, 1) = std_laspy_;
+        }
+        else if (meas_package.sensor_type_ == MeasurementPackage::RADAR) {
+            double rho = meas_package.raw_measurements_(0);
+            double phi = meas_package.raw_measurements_(1);
+            double rho_dot = meas_package.raw_measurements_(2);
+
+            double p_x = rho * cos(phi);
+            double p_y = rho * sin(phi);
+
+            x_ << p_x, p_y, rho_dot, phi, 0;
+        }
     }
+    is_initialized_ = true;
+    time_us_ = meas_package.timestamp_;
+    return;
 }
 
 void UKF::Prediction(double delta_t) {
