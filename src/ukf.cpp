@@ -117,6 +117,79 @@ void UKF::Prediction(double delta_t) {
     * Modify the state vector, x_. Predict sigma points, the state,
     * and the state covariance matrix.
     */
+
+    // Augment state and covariance matrix
+    MatrixXd x_aug = VectorXd(n_aug_);
+    x_aug.head(5) = x_;
+    x_aug(5) = std_a_;
+    x_aug(6) = std_yawdd_;
+
+    MatrixXd P_aug = MatrixXd::identity(n_aug_, n_aug_);
+    P_aug.fill(0.0);
+    for (int i = 0; i < n_x_; i++) {
+        P_aug(i, i) = P_(i, i);
+    }
+    P_aug(5, 5) = std_a_*std_a;
+    P_aug(6, 6) = std_yawdd_*std_yawdd_;
+
+    // Generate Sigma Points
+    VectorXd Xsig = VextorXd(n_aug_);
+    MatrixXd A = P_aug.llt().matrixL();
+    MatrixXd c1 = sqrt(lambda_ + n_x_);
+    Xsig_pred_.col(0) = x_;
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        Xsig(i+1) = x_aug + c1*A;
+        Xsig(i+1+n_aug_) = x_aug - c1*A;
+    }
+
+    // Sigma points prediction
+    double px = Xsig(0);
+    double py = Xsig(1);
+    double v = Xsig(2);
+    double psi = Xsig(3);
+    double psi_dot = Xsig(4);
+    double mu_a = Xsig(5);
+    double mu_psi_ddot = Xsig(6);
+
+    VectorXd x1 = VectorXd(n_aug_);
+    if (psi_dot < 0.0001) {
+        x1 << v*cos(psi)*delta_t,
+              v*sin(psi)*delta_t,
+              0,
+              psi_dot*delta_t,
+              0;
+    } else {
+        x1 << V/psi_dot*(sin(psi+psi_dot*delta_t) - sin(psi)),
+              V/psi_dot*(-cos(psi+psi_dot*delta_t) + cos(psi)),
+              0,
+              psi_dot*delta_t,
+              0;
+    }
+    VectorXd x2 = VectorXd(n_aug_);
+    x2 << 0.5*delta_t*delta_t*cos(psi)*mu_a,
+          0.5*delta_t*delta_t*sin(psi)*mu_a,
+          delta_t*mu_a,
+          0.5*delta_t*delta_t*mu_psi_ddot,
+          delta_t*mu_psi_ddot;
+
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        for (int j = 0; j < 5; j++) {
+            Xsig_pred_(j, i) = px + x1(j) + x2(j);
+        }
+    }
+
+    // Predict mean and covariance
+    VectorXd x = VectorXd(n_x_);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        x += weights(i)*Xsig_pred_;
+    }
+    x_ = x;
+
+    MatrixXd P = MatrixXd(n_x_, n_x_);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        P += weights(i)*(Xsig_pred_ - x)*(Xsig_pred_ - x).transpose();
+    }
+    P_ = P;
 }
 
 void UKF::UpdateLidar(MeasurementPackage meas_package) {
