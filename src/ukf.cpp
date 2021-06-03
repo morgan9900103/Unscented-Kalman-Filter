@@ -209,14 +209,13 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     * You can also calculate the radar NIS, if desired.
     */
 
-    // Transfer predicted state into measurement state space
-
     double n_z = 3;
     VectorXd z = VectorXd(n_z);
     z << meas_package.raw_measurements_(0),
          meas_package.raw_measurements_(1),
          meas_package.raw_measurements_(2);
 
+    // Transfer predicted state into measurement state space
     MatrixXd Zsig = MatrixXd(n_z, n_z);
 
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
@@ -239,12 +238,14 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
         z_pred += weights(i)*Zsig.col(i);
     }
 
+    // Predicted covariance
     MatrixXd S = MatrixXd(n_z, n_z);
     S.fill(0.0);
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
         S += weights(i)*(Zsig.col(i) - z_pred)*(Zsig - z_pred).transpose;
     }
 
+    // Measurement noise
     MatrixXd R = MatrixXd::identity(n_z, n_z);
     R(0, 0) = std_radr_*std_radr_;
     R(1, 1) = std_radphi_*std_radphi_;
@@ -252,14 +253,17 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
     S += R;
 
+    // Cross-correlation matrix
     MatrixXd Tc = MatrixXd(n_x_, n_z);
     Tc.fill(0.0);
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
         Tc += weights(0)*(Xsig_pred_.col(i) - x_)*(Zsig.col(i) - z_pred).transpose;
     }
 
+    // Kalman gain
     MatrixXd K = Tc*S.inverse();
 
+    // Update state
     x_ += K*(z - z_pred);
     P_ -= K*S*K.inverse();
 }
