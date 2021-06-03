@@ -129,7 +129,7 @@ void UKF::Prediction(double delta_t) {
     for (int i = 0; i < n_x_; i++) {
         P_aug(i, i) = P_(i, i);
     }
-    P_aug(5, 5) = std_a_*std_a;
+    P_aug(5, 5) = std_a_*std_a_;
     P_aug(6, 6) = std_yawdd_*std_yawdd_;
 
     // Generate Sigma Points
@@ -199,6 +199,66 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
     * covariance, P_.
     * You can also calculate the lidar NIS, if desired.
     */
+
+    double n_z = 2;
+    VectorXd z = VectorXd(n_z);
+    z << meas_package.raw_measurements_(0),
+         meas_package.raw_measurements_(1);
+
+    // Transfer predicted state into measurement state space
+    MatrixXd Zsig = MatrixXd(n_z, n_z);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        double px = Xsig_pred_(0, i);
+        double py = Xsig_pred_(1, i);
+
+        Zsig(0, i) = px;
+        Zsig(1, i) = py;
+    }
+
+    VectorXd z_pred = VectorXd(n_z);
+    z_pred.fill(0.0);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        z_pred += weights(i)*Zsig.col(i);
+    }
+
+    // Predict covatance matrix
+    MatrixXd S = (n_z, n_z);
+    S.fill(0.0);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        VectorXd z_diff = Zsig.col(i) - z_pred;
+        while (z_diff > M_PI) z_diff -= 2 * M_PI;
+        while (z_diff < -M_PI) z_diff += 2 * M_PI;
+        S += weights(i)*(z_diff)*(z_diff).transpose();
+    }
+
+    // Measurement noise matrix
+    MatrixXd R = MatrixXd::identity(n_z, n_z);
+    R(0, 0) = std_a_*std_a_;
+    R(1, 1) = std_yawdd_*std_yawdd_;
+
+    S += R;
+
+    // Cross-correlation matrix
+    MatrixXd Tc = MatrixXd(n_x_, n_z);
+    Tc.fill(0.0);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        VectorXd z_diff = Zsig.col(i) - z_pred;
+        while (z_diff > M_PI) z_diff -= 2 * M_PI;
+        while (z_diff < -M_PI) z_diff += 2 * M_PI;
+
+        VectorXd x_diff = Xsig_pred_.col(i) - x_;
+        while (x_diff > M_PI) x_diff -= 2 * M_PI;
+        while (x_diff < -M_PI) x_diff += 2 * M_PI;
+
+        Tc += weights(i)*(x_diff)*(z_diff).transpose;
+    }
+
+    // Kalman gain
+    MatrixXd K = Tc*S.inverse();
+
+    // Update state
+    x_ += K*(z - z_pred);
+    P_ -= K*S*K.inverse();
 }
 
 void UKF::UpdateRadar(MeasurementPackage meas_package) {
@@ -217,7 +277,6 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
     // Transfer predicted state into measurement state space
     MatrixXd Zsig = MatrixXd(n_z, n_z);
-
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
         double px = Xsig_pred_(0, i);
         double py = Xsig_pred_(1, i);
@@ -238,14 +297,17 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
         z_pred += weights(i)*Zsig.col(i);
     }
 
-    // Predicted covariance
+    // Predicted covariance matrix
     MatrixXd S = MatrixXd(n_z, n_z);
     S.fill(0.0);
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
-        S += weights(i)*(Zsig.col(i) - z_pred)*(Zsig - z_pred).transpose;
+        VectorXd z_diff = Zsig.col(i) - z_pred;
+        while (z_diff > M_PI) z_diff -= 2 * M_PI;
+        while (z_diff < -M_PI) z_diff += 2 * M_PI;
+        S += weights(i)*(z_diff)*(z_diff).transpose();
     }
 
-    // Measurement noise
+    // Measurement noise matrix
     MatrixXd R = MatrixXd::identity(n_z, n_z);
     R(0, 0) = std_radr_*std_radr_;
     R(1, 1) = std_radphi_*std_radphi_;
@@ -257,7 +319,15 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     MatrixXd Tc = MatrixXd(n_x_, n_z);
     Tc.fill(0.0);
     for (int i = 0; i < 2 * n_aug_ + 1; i++) {
-        Tc += weights(0)*(Xsig_pred_.col(i) - x_)*(Zsig.col(i) - z_pred).transpose;
+        VectorXd z_diff = Zsig.col(i) - z_pred;
+        while (z_diff > M_PI) z_diff -= 2 * M_PI;
+        while (z_diff < -M_PI) z_diff += 2 * M_PI;
+
+        VectorXd x_diff = Xsig_pred_.col(i) - x_;
+        while (x_diff > M_PI) x_diff -= 2 * M_PI;
+        while (x_diff < -M_PI) x_diff += 2 * M_PI;
+
+        Tc += weights(i)*(x_diff)*(z_diff).transpose;
     }
 
     // Kalman gain
