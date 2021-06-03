@@ -208,4 +208,58 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     * covariance, P_.
     * You can also calculate the radar NIS, if desired.
     */
+
+    // Transfer predicted state into measurement state space
+
+    double n_z = 3;
+    VectorXd z = VectorXd(n_z);
+    z << meas_package.raw_measurements_(0),
+         meas_package.raw_measurements_(1),
+         meas_package.raw_measurements_(2);
+
+    MatrixXd Zsig = MatrixXd(n_z, n_z);
+
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        double px = Xsig_pred_(0, i);
+        double py = Xsig_pred_(1, i);
+        double v = Xsig_pred_(2, i);
+        double psi = Xsig_pred_(3, i);
+        double psi_dot = Xsig_pred_(4, i);
+
+        double c1 = sqrt(px*px + py*py);
+        double c2 = px*cos(psi)*v + py*sin(psi)*v;
+
+        Zsig(0, i) = c1;
+        Zsig(1, i) = atan(py/px);
+        Zsig(2, i) = c2/c1;
+    }
+
+    VectorXd z_pred = VectorXd(n_z);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        z_pred += weights(i)*Zsig.col(i);
+    }
+
+    MatrixXd S = MatrixXd(n_z, n_z);
+    S.fill(0.0);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        S += weights(i)*(Zsig.col(i) - z_pred)*(Zsig - z_pred).transpose;
+    }
+
+    MatrixXd R = MatrixXd::identity(n_z, n_z);
+    R(0, 0) = std_radr_*std_radr_;
+    R(1, 1) = std_radphi_*std_radphi_;
+    R(2, 2) = std_radrd_*std_radrd_;
+
+    S += R;
+
+    MatrixXd Tc = MatrixXd(n_x_, n_z);
+    Tc.fill(0.0);
+    for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+        Tc += weights(0)*(Xsig_pred_.col(i) - x_)*(Zsig.col(i) - z_pred).transpose;
+    }
+
+    MatrixXd K = Tc*S.inverse();
+
+    x_ += K*(z - z_pred);
+    P_ -= K*S*K.inverse();
 }
